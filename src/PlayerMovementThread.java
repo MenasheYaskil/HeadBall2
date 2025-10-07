@@ -1,6 +1,5 @@
 public class PlayerMovementThread extends Thread {
-
-    private Player1 player; // Reference to the Player object
+    private final Player1 player; // Currently unused; kept for future use
 
     public PlayerMovementThread(Player1 player) {
         this.player = player;
@@ -8,12 +7,11 @@ public class PlayerMovementThread extends Thread {
 
     @Override
     public void run() {
-        while (!isInterrupted()) { // Run until interrupted
-            //player.updatePosition(); // Update player's position
+        while (!isInterrupted()) {
             try {
-                Thread.sleep(10); // Sleep for 10 milliseconds (adjust as needed)
+                Thread.sleep(10);
             } catch (InterruptedException e) {
-                break; // Exit loop if interrupted
+                break;
             }
         }
     }

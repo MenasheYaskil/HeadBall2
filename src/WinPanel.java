@@ -10,47 +10,33 @@ public class WinPanel extends JPanel {
     private JFrame newFrame;
 
     public WinPanel(int playerID) {
-        newFrame = new JFrame("winner Screen");
+        newFrame = new JFrame("Winner Screen");
         newFrame.setSize(800, 381);
         newFrame.setLocationRelativeTo(null);
-        newFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        newFrame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         newFrame.setResizable(false);
-        if(playerID==2){
-            System.out.println(5000);
-            try {
+
+        try {
+            if (playerID == 2) {
                 backgroundImage = ImageIO.read(new File("images/red wins.jpg"));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-
-        } else if (playerID==1){
-            try {
+            } else if (playerID == 1) {
                 backgroundImage = ImageIO.read(new File("images/green wins.jpg"));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-
-        }else if (playerID==0){
-            try {
+            } else {
                 backgroundImage = ImageIO.read(new File("images/draw.jpg"));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
             }
-
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
 
-        newFrame.add(this);
-
-
+        newFrame.setContentPane(this);
         newFrame.setVisible(true);
-
-
     }
+
+    @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        // Draw the background image
         if (backgroundImage != null) {
-            g.drawImage(backgroundImage, 0, 0, this.getWidth(), this.getHeight(), null);
+            g.drawImage(backgroundImage, 0, 0, getWidth(), getHeight(), null);
         }
     }
 }

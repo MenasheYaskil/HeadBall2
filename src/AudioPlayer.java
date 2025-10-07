@@ -2,7 +2,7 @@ import javax.sound.sampled.*;
 import java.io.File;
 import java.io.IOException;
 
-public class AudioPlayer {
+public class AudioPlayer implements AutoCloseable {
     private Clip clip;
 
     public AudioPlayer(String filePath) {
@@ -12,18 +12,22 @@ public class AudioPlayer {
                 System.err.println("The audio file does not exist: " + filePath);
                 return;
             }
-            AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(audioFile);
-            clip = AudioSystem.getClip();
-            clip.open(audioInputStream);
+            try (AudioInputStream audioInputStream = AudioSystem.getAudioInputStream(audioFile)) {
+                clip = AudioSystem.getClip();
+                clip.open(audioInputStream);
+            }
         } catch (UnsupportedAudioFileException | IOException | LineUnavailableException e) {
             e.printStackTrace();
         }
     }
 
     public void play() {
-        if (clip != null && !clip.isRunning()) {
+        if (clip != null) {
+            if (clip.isRunning()) {
+                clip.stop();
+            }
+            clip.setFramePosition(0); // start from beginning
             clip.start();
-            //clip.loop(Clip.LOOP_CONTINUOUSLY); // להשמיע בלופ מתמשך
         }
     }
 
@@ -33,7 +37,14 @@ public class AudioPlayer {
         }
     }
 
-    public boolean isPlaying() {
-        return clip != null && clip.isRunning();
+    @Override
+    public void close() {
+        if (clip != null) {
+            try {
+                clip.stop();
+            } finally {
+                clip.close();
+            }
+        }
     }
 }

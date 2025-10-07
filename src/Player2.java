@@ -8,19 +8,22 @@ import java.io.File;
 import java.io.IOException;
 
 public class Player2 extends JComponent implements Runnable {
+    private static final long serialVersionUID = 1L;
+
     private BufferedImage image;
     private Point location;
     private int dx, dy;
     private boolean inAir;
-    private GamePanel gamePanel;
-    private Thread playerThread;
-    private final int groundLevel; // Fixed ground level
-    private final int leftBoundary; // Left boundary
-    private final int rightBoundary; // Right boundary
-    private Point centerOfTheHead ;
-    private Point upperRight,lowerLeft;
+    private final GamePanel gamePanel;
+    private final Thread playerThread;
+    private final int groundLevel;
+    private final int leftBoundary;
+    private final int rightBoundary;
+    private Point centerOfTheHead;
+    private Point upperRight, lowerLeft;
+    private volatile boolean running = true;
 
-
+    private final AudioPlayer jumpSound = new AudioPlayer("Audio/Audio_jumppp11.wav");
 
     public Player2(GamePanel gamePanel) {
         this.gamePanel = gamePanel;
@@ -35,23 +38,79 @@ public class Player2 extends JComponent implements Runnable {
         int newHeight = 60;
         image = gamePanel.paintImage(image, newWidth, newHeight);
 
-        // Set initial position
-        leftBoundary = 70; // Adjust this value to set the left boundary
-        rightBoundary = 730; // Adjust this value to set the right boundary
-        groundLevel = (((800 * 2)/10))+15; // Fixed ground level
-        location=new Point( leftBoundary,groundLevel) ; // Right side
-        centerOfTheHead=new Point(location.getX()+50, location.getY()+15);
-        upperRight=new Point(location.getX()+35, location.getY()+30 );
-        lowerLeft=new Point(location.getX()+65, location.getY()+60 );
+        leftBoundary = 70;
+        rightBoundary = 730;
+        groundLevel = ((800 * 2) / 10) + 15;
+
+        location = new Point(leftBoundary, groundLevel);
+        centerOfTheHead = new Point(location.getX() + 50, location.getY() + 15);
+        upperRight = new Point(location.getX() + 35, location.getY() + 30);
+        lowerLeft = new Point(location.getX() + 65, location.getY() + 60);
+
+        setOpaque(false);
+        setBounds(0, 0, 800, 381);
 
         gamePanel.setFocusable(true);
         gamePanel.addKeyListener(new TAdapter());
 
-        playerThread = new Thread(this);
+        playerThread = new Thread(this, "Player2-Thread");
     }
 
-    public void start() {
-        playerThread.start();
+    public void start() { playerThread.start(); }
+    public void stopLoop() { running = false; }
+
+    public Point getUpperRight() { return upperRight; }
+    public Point getLowerLeft() { return lowerLeft; }
+    public Point getCenterOfTheHead() { return centerOfTheHead; }
+
+    private void updatePosition() {
+        location.setX(location.getX() + dx);
+        centerOfTheHead.setX(centerOfTheHead.getX() + dx);
+        upperRight.setX(location.getX() + 35);
+        lowerLeft.setX(location.getX() + 65);
+
+        if (inAir) dy += 1;
+
+        location.setY(location.getY() + dy);
+        centerOfTheHead.setY(centerOfTheHead.getY() + dy);
+        upperRight.setY(location.getY() + 30);
+        lowerLeft.setY(location.getY() + 60);
+
+        if (location.getX() < leftBoundary) {
+            location.setX(leftBoundary);
+            centerOfTheHead.setX(location.getX() + 50);
+            upperRight.setX(location.getX() + 35);
+            lowerLeft.setX(location.getX() + 65);
+            dx = 0;
+        } else if (location.getX() + image.getWidth() > rightBoundary) {
+            location.setX(rightBoundary - image.getWidth());
+            centerOfTheHead.setX(location.getX() + 50);
+            upperRight.setX(location.getX() + 35);
+            lowerLeft.setX(location.getX() + 65);
+            dx = 0;
+        }
+
+        if (location.getY() > groundLevel) {
+            location.setY(groundLevel);
+            centerOfTheHead.setY(groundLevel + 15);
+            upperRight.setY(location.getY() + 30);
+            lowerLeft.setY(location.getY() + 60);
+            dy = 0;
+            inAir = false;
+        }
+    }
+
+    public void setGoalLocation() {
+        location.setX(leftBoundary);
+        location.setY(groundLevel);
+        centerOfTheHead.setX(location.getX() + 50);
+        centerOfTheHead.setY(location.getY() + 15);
+        upperRight.setX(location.getX() + 35);
+        upperRight.setY(location.getY() + 30);
+        lowerLeft.setX(location.getX() + 65);
+        lowerLeft.setY(location.getY() + 60);
+        dx = dy = 0;
+        inAir = false;
     }
 
     @Override
@@ -62,97 +121,31 @@ public class Player2 extends JComponent implements Runnable {
 
     @Override
     public void run() {
-        while (true) {
+        while (running) {
             updatePosition();
-            gamePanel.repaint();
-            try {
-                Thread.sleep(10); // Update every 10 ms
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+            SwingUtilities.invokeLater(gamePanel::repaint);
+            try { Thread.sleep(10); } catch (InterruptedException e) { break; }
         }
-    }
-    public Point getUpperRight() {
-        return upperRight;
-    }
-
-    public Point getLowerLeft() {
-        return lowerLeft;
-    }
-
-    public Point getCenterOfTheHead() {
-        return centerOfTheHead;
-    }
-
-    private void updatePosition() {
-        location.setX(location.getX()+dx);
-        centerOfTheHead.setX(centerOfTheHead.getX()+dx);
-        upperRight.setX(location.getX()+35);
-        lowerLeft.setX(location.getX()+65);
-        if (inAir) {
-            dy += 1; // Gravity effect
-        }
-        location.setY(location.getY()+dy);
-        centerOfTheHead.setY(centerOfTheHead.getY()+dy);
-        upperRight.setY(location.getY()+30);
-        lowerLeft.setY(location.getY()+60);
-        // Check horizontal boundaries
-        if (location.getX() < leftBoundary) {
-            location.setX(leftBoundary);
-            centerOfTheHead.setX(location.getX()+50);
-            upperRight.setX(location.getX()+35);
-            lowerLeft.setX(location.getX()+65);
-
-            dx = 0;
-        } else if (location.getX() + image.getWidth() > rightBoundary) {
-            location.setX(rightBoundary - image.getWidth());
-            centerOfTheHead.setX(location.getX()+50);
-            upperRight.setX(location.getX()+35);
-            lowerLeft.setX(location.getX()+65);
-            dx = 0;
-        }
-
-        // Check vertical boundaries
-        if (location.getY() > groundLevel) {
-            location.setY(groundLevel);
-            centerOfTheHead.setY(groundLevel+15);
-            upperRight.setY(location.getY()+30);
-            lowerLeft.setY(location.getY()+60);
-            dy = 0;
-            inAir = false;
-        }
-
-    }
-    public void setGoalLocation(){
-        location.setX(60);
-        centerOfTheHead.setX(centerOfTheHead.getX()+50);
-
+        jumpSound.close();
     }
 
     private class TAdapter extends KeyAdapter {
         @Override
         public void keyPressed(KeyEvent e) {
             int key = e.getKeyCode();
-            if (key == KeyEvent.VK_A) {
-                dx = -2;
-            }
-            if (key == KeyEvent.VK_D) {
-                dx = 2;
-            }
+            if (key == KeyEvent.VK_A) dx = -2;
+            if (key == KeyEvent.VK_D) dx = 2;
             if (key == KeyEvent.VK_W && !inAir) {
                 dy = -13;
                 inAir = true;
-                AudioPlayer audioPlayer = new AudioPlayer("Audio/Audio_jumppp11.wav");
-                audioPlayer.play();
+                jumpSound.play();
             }
         }
 
         @Override
         public void keyReleased(KeyEvent e) {
             int key = e.getKeyCode();
-            if (key == KeyEvent.VK_A || key == KeyEvent.VK_D) {
-                dx = 0;
-            }
+            if (key == KeyEvent.VK_A || key == KeyEvent.VK_D) dx = 0;
         }
     }
 }
