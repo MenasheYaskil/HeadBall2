@@ -1,41 +1,55 @@
 import javax.swing.*;
+import javax.imageio.ImageIO;
 import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.File;
 
 public class Ball extends JComponent implements Runnable {
     private static final long serialVersionUID = 1L;
 
-    // Field & geometry constants
+    public static final int GROUND_Y = 235;
     private static final int FIELD_WIDTH = 786;
     private static final int PANEL_WIDTH = 800;
     private static final int PANEL_HEIGHT = 381;
-
     private static final int SIDE_MARGIN = 40;
     private static final int GOAL_MARGIN = 110;
     private static final int DIAMETER = 30;
 
-    private final double gravity = 0.1;
-    private final double elasticity = 0.9;
-    private final int bottomBoundary = 235;
+    private static final double GRAVITY = 0.10;
+    private static final double ELASTICITY = 0.90;
+    private static final double MAX_SPEED = 10.0;
 
-    private double x = 375; // Initial x position
-    private double y = 0;   // Initial y position
-    private double xVelocity = 0;
-    private double yVelocity = 0;
+    private double x = 375, y = 0, vx = 0, vy = 0;
+    private final Point center = new Point((int) x + DIAMETER / 2, (int) y + DIAMETER / 2);
 
     private final GamePanel gamePanel;
     private final Thread animator;
-    private final Point center = new Point((int)x + DIAMETER/2, (int)y + DIAMETER/2);
     private volatile boolean running = true;
+
+    private volatile double renderScale = 1.0;
+    private volatile int renderOffsetX = 0, renderOffsetY = 0;
+
+    private BufferedImage ballTexture;
+    private final AudioPlayer hitSound = new AudioPlayer("Audio/ball_hit.wav");
+    private long lastHitSoundMs = 0;
 
     public Ball(GamePanel gamePanel) {
         this.gamePanel = gamePanel;
         setOpaque(false);
         setBounds(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+        loadBallTexture();
         animator = new Thread(this, "Ball-Animator");
         animator.start();
     }
 
-    public void stopLoop() { running = false; }
+    public void setRenderScale(double s, int ox, int oy) {
+        renderScale = s; renderOffsetX = ox; renderOffsetY = oy;
+    }
+
+    public void stopLoop() {
+        running = false;
+        hitSound.close();
+    }
 
     @Override
     public void run() {
@@ -47,123 +61,132 @@ public class Ball extends JComponent implements Runnable {
     }
 
     private void moveBall() {
-        // Clamp velocity
-        if (xVelocity > 10) xVelocity = 10;
-        if (yVelocity > 10) yVelocity = 10;
+        vy += GRAVITY;
+        x += vx; y += vy; syncCenter();
 
-        yVelocity += gravity;
-        x += xVelocity; center.setX((int)x + DIAMETER/2);
-        y += yVelocity; center.setY((int)y + DIAMETER/2);
+        vx = clamp(vx, -MAX_SPEED, MAX_SPEED);
+        vy = clamp(vy, -MAX_SPEED, MAX_SPEED);
 
-        if (xVelocity > 10) xVelocity = 10;
-        if (yVelocity > 10) yVelocity = 10;
-
-        // Walls
         if (x <= SIDE_MARGIN || x >= FIELD_WIDTH - DIAMETER - SIDE_MARGIN) {
-            xVelocity = -xVelocity * elasticity;
-            if (x <= SIDE_MARGIN) {
-                x = SIDE_MARGIN;
-            } else {
-                x = FIELD_WIDTH - DIAMETER - SIDE_MARGIN;
-            }
-            center.setX((int)x + DIAMETER/2);
+            vx = -vx * ELASTICITY;
+            x = Math.max(SIDE_MARGIN, Math.min(x, FIELD_WIDTH - DIAMETER - SIDE_MARGIN));
+            syncCenter(); playHit();
         }
 
-        // Upper corners (goal posts top)
-        if ((x <= GOAL_MARGIN && y <= GOAL_MARGIN) || (x >= FIELD_WIDTH - DIAMETER - GOAL_MARGIN && y <= GOAL_MARGIN)) {
-            xVelocity = -xVelocity * elasticity;
-            if (x <= GOAL_MARGIN) {
-                x = GOAL_MARGIN;
-            } else {
-                x = FIELD_WIDTH - DIAMETER - GOAL_MARGIN;
-            }
-            center.setX((int)x + DIAMETER/2);
+        if ((x <= GOAL_MARGIN && y <= GOAL_MARGIN) ||
+                (x >= FIELD_WIDTH - DIAMETER - GOAL_MARGIN && y <= GOAL_MARGIN)) {
+            vx = -vx * ELASTICITY;
+            x = (x <= GOAL_MARGIN) ? GOAL_MARGIN : FIELD_WIDTH - DIAMETER - GOAL_MARGIN;
+            syncCenter(); playHit();
         }
 
-        // Goals
-        if (center.getX() <= GOAL_MARGIN) {
-            gamePanel.goal(1);
-            resetBall(-3, 3);
-        }
-        if (center.getX() >= FIELD_WIDTH - GOAL_MARGIN) {
-            gamePanel.goal(2);
-            resetBall(3, 3);
-        }
+        if (center.getX() <= GOAL_MARGIN) { gamePanel.goal(1); resetBall(-3, 3); }
+        if (center.getX() >= FIELD_WIDTH - GOAL_MARGIN) { gamePanel.goal(2); resetBall(3, 3); }
 
-        // Floor
-        if (y >= bottomBoundary - DIAMETER) {
-            y = bottomBoundary - DIAMETER;
-            center.setY((int)y + DIAMETER/2);
-            yVelocity = -yVelocity * elasticity;
-        }
-        // Ceiling
-        if (y <= 0) {
-            y = 0;
-            center.setY((int)y + DIAMETER/2);
-            yVelocity = -yVelocity * elasticity;
-        }
+        if (y >= GROUND_Y - DIAMETER) { y = GROUND_Y - DIAMETER; syncCenter(); vy = -vy * ELASTICITY; playHit(); }
+        if (y <= 0) { y = 0; syncCenter(); vy = -vy * ELASTICITY; playHit(); }
 
-        // Collisions with heads
-        handleHeadCollision(gamePanel.getPlayer1().getCenterOfTheHead());
-        handleHeadCollision(gamePanel.getPlayer2().getCenterOfTheHead());
+        handleHeadCollision(gamePanel.getPlayer1().getCenterOfTheHead(), gamePanel.getPlayer1().getHeadRadius());
+        handleHeadCollision(gamePanel.getPlayer2().getCenterOfTheHead(), gamePanel.getPlayer2().getHeadRadius());
     }
 
     private void resetBall(double newVX, double newVY) {
-        x = 375; y = 0;
-        center.setX((int)x + DIAMETER/2);
-        center.setY((int)y + DIAMETER/2);
-        xVelocity = newVX;
-        yVelocity = newVY;
+        x = 375; y = 0; syncCenter();
+        vx = newVX; vy = newVY;
     }
 
-    private void handleHeadCollision(Point headCenter) {
-        if (headCenter.distance(center) > 30) return;
+    private void handleHeadCollision(Point head, int headRadius) {
+        int ballRadius = DIAMETER / 2;
+        double dist = head.distance(center);
+        double hitDist = headRadius + ballRadius;
+        if (dist > hitDist) return;
 
-        double xCalculation = headCenter.getX() - center.getX();
-        double yCalculation = headCenter.getY() - center.getY();
+        double dx = head.getX() - center.getX();
+        double dy = head.getY() - center.getY();
 
-        if (xCalculation != 0) {
-            double incline = yCalculation / xCalculation;
-            // Quadrants
-            if (xCalculation < 0 && yCalculation > 0) {                 // from top-right
-                if (incline <= -1) { yVelocity = 6 / (-incline + 1) * incline; xVelocity = 6 / (-incline + 1); }
-                if (incline > -1 && incline < 0) { incline = 1 / incline; xVelocity = 6 / -(-incline + 1) * incline; yVelocity = 6 / (incline + 1); }
-            }
-            if (yCalculation < 0 && xCalculation < 0) {                  // from bottom-right
-                if (incline >= 1) { yVelocity = 6 / (incline + 1) * incline; xVelocity = 6 / (incline + 1); }
-                if (incline < 1 && incline > 0) { incline = 1 / incline; xVelocity = 6 / (incline + 1) * incline; yVelocity = 6 / (incline + 1); }
-            }
-            if (yCalculation < 0 && xCalculation > 0) {                  // from bottom-left
-                if (incline <= -1) { yVelocity = 6 / -(-incline + 1) * incline; xVelocity = 6 / (incline + 1); }
-                if (incline > -1 && incline < 0) { incline = 1 / incline; xVelocity = 6 / (-incline + 1) * incline; yVelocity = 6 / (-incline + 1); }
-            }
-            if (yCalculation > 0 && xCalculation > 0) {                  // from top-left
-                if (incline >= 1) { yVelocity = 6 / -(incline + 1) * incline; xVelocity = 6 / -(incline + 1); }
-                if (incline < 1 && incline > 0) { incline = 1 / incline; xVelocity = 6 / -(incline + 1) * incline; yVelocity = 6 / -(incline + 1); }
-            }
-            if (incline == 0) {
-                if (xCalculation < 0) { xVelocity = -6; yVelocity = 0; }
-                else { xVelocity = 6; yVelocity = 0; }
-            }
+        if (dx != 0) {
+            double m = dy / dx;
+            if (dx < 0 && dy > 0) { if (m <= -1) { vy = 6 / (-m + 1) * m; vx = 6 / (-m + 1); } if (m > -1 && m < 0) { m = 1 / m; vx = 6 / -(-m + 1) * m; vy = 6 / (m + 1); } }
+            if (dy < 0 && dx < 0) { if (m >= 1) { vy = 6 / (m + 1) * m; vx = 6 / (m + 1); } if (m < 1 && m > 0) { m = 1 / m; vx = 6 / (m + 1) * m; vy = 6 / (m + 1); } }
+            if (dy < 0 && dx > 0) { if (m <= -1) { vy = 6 / -(-m + 1) * m; vx = 6 / (m + 1); } if (m > -1 && m < 0) { m = 1 / m; vx = 6 / (-m + 1) * m; vy = 6 / (-m + 1); } }
+            if (dy > 0 && dx > 0) { if (m >= 1) { vy = 6 / -(m + 1) * m; vx = 6 / -(m + 1); } if (m < 1 && m > 0) { m = 1 / m; vx = 6 / -(m + 1) * m; vy = 6 / -(m + 1); } }
+            if (m == 0) { if (dx < 0) { vx = -6; vy = 0; } else { vx = 6; vy = 0; } }
         } else {
-            if (yCalculation >= 0) { xVelocity = 0; yVelocity = -6; }
-            else { xVelocity = 0; yVelocity = 6; }
+            if (dy >= 0) { vx = 0; vy = -6; } else { vx = 0; vy = 6; }
         }
+
+        if (dist < 1e-4) dist = 1e-4;
+        double nx = (center.getX() - head.getX()) / dist;
+        double ny = (center.getY() - head.getY()) / dist;
+        double push = (hitDist - dist) + 0.8;
+        x += nx * push; y += ny * push; syncCenter();
+
+        vx = clamp(vx, -MAX_SPEED, MAX_SPEED);
+        vy = clamp(vy, -MAX_SPEED, MAX_SPEED);
+        playHit();
+    }
+
+    private void playHit() {
+        long now = System.currentTimeMillis();
+        if (now - lastHitSoundMs > 80) {
+            hitSound.play();
+            lastHitSoundMs = now;
+        }
+    }
+
+    private void loadBallTexture() {
+        String[] paths = { "/images/ball_soccer.png", "images/ball_soccer.png" };
+        for (String p : paths) {
+            try {
+                ballTexture = p.startsWith("/") ? ImageIO.read(getClass().getResource(p)) : ImageIO.read(new File(p));
+                if (ballTexture != null) return;
+            } catch (Exception ignored) {}
+        }
+        ballTexture = null;
+    }
+
+    private void syncCenter() {
+        center.setX((int) x + DIAMETER / 2);
+        center.setY((int) y + DIAMETER / 2);
+    }
+
+    private static double clamp(double v, double min, double max) {
+        return Math.max(min, Math.min(max, v));
     }
 
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        Graphics2D g2d = (Graphics2D) g.create();
+        int drawX = renderOffsetX + (int) Math.round(x * renderScale);
+        int drawY = renderOffsetY + (int) Math.round(y * renderScale);
+        int d = (int) Math.round(DIAMETER * renderScale);
+
+        Graphics2D g2 = (Graphics2D) g.create();
         try {
-            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2d.setColor(Color.RED);
-            g2d.fillOval((int) x, (int) y, DIAMETER, DIAMETER);
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            double bottom = y + DIAMETER;
+            double above = Math.max(0, GROUND_Y - bottom);
+            double t = Math.max(0.0, Math.min(1.0, 1.0 - above / 120.0));
+
+            int sw = (int) Math.round(d * (0.55 + 0.35 * t));
+            int sh = (int) Math.round(d * (0.25 + 0.20 * t));
+            int sx = renderOffsetX + (int) Math.round((x + DIAMETER / 2.0) * renderScale) - sw / 2;
+            int sy = renderOffsetY + (int) Math.round(GROUND_Y * renderScale) - sh / 2;
+
+            g2.setColor(new Color(0, 0, 0, (int) (80 + 80 * t)));
+            g2.fillOval(sx, sy, sw, sh);
+
+            if (ballTexture != null) g2.drawImage(ballTexture, drawX, drawY, d, d, null);
+            else { g2.setColor(Color.RED); g2.fillOval(drawX, drawY, d, d); }
         } finally {
-            g2d.dispose();
+            g2.dispose();
+            Toolkit.getDefaultToolkit().sync();
         }
     }
 
     @Override
-    public Dimension getPreferredSize() { return new Dimension(PANEL_WIDTH, PANEL_HEIGHT); }
+    public Dimension getPreferredSize() {
+        return new Dimension(PANEL_WIDTH, PANEL_HEIGHT);
+    }
 }

@@ -10,42 +10,49 @@ import java.io.IOException;
 public class Player1 extends JComponent implements Runnable {
     private static final long serialVersionUID = 1L;
 
+    private static final int SPRITE_W = 100, SPRITE_H = 60;
+    private static final int LEFT_BOUND = 70;
+    private static final int RIGHT_BOUND = 720;
+    private static final int FOOT_OFFSET = 8;
+    private static final double RUN_SPEED = 3.0;
+    private static final double AIR_CONTROL = 0.7;
+    private static final int JUMP_IMPULSE = -13;
+    private static final int GRAVITY_Y = 1;
+    private static final int HEAD_OFFSET_X = 50;
+    private static final int HEAD_OFFSET_Y = 20;
+    private static final int HEAD_RADIUS = 13;
+
     private BufferedImage image;
     private Point location;
-    private int dx, dy;
+    private double dx;
+    private int dy;
     private boolean inAir;
+
     private final GamePanel gamePanel;
     private final Thread playerThread;
     private final int groundLevel;
-    private final int leftBoundary;
-    private final int rightBoundary;
     private Point centerOfTheHead;
     private Point upperRight, lowerLeft;
     private volatile boolean running = true;
 
     private final AudioPlayer jumpSound = new AudioPlayer("Audio/Audio_jumppp11.wav");
 
+    private volatile double renderScale = 1.0;
+    private volatile int renderOffsetX = 0, renderOffsetY = 0;
+
     public Player1(GamePanel gamePanel) {
         this.gamePanel = gamePanel;
         try {
             image = ImageIO.read(new File("images/sizedPlayer1.png"));
         } catch (IOException e) {
-            e.printStackTrace();
-            System.exit(1);
+            throw new RuntimeException(e);
         }
+        groundLevel = Ball.GROUND_Y - SPRITE_H + FOOT_OFFSET;
 
-        int newWidth = 100;
-        int newHeight = 60;
-        image = gamePanel.paintImage(image, newWidth, newHeight);
-
-        leftBoundary = 70;
-        rightBoundary = 800 - 80;
-        groundLevel = ((800 * 2) / 10) + 15;
-
-        location = new Point(800 - 60, groundLevel);
-        centerOfTheHead = new Point(location.getX() + 50, location.getY() + 15);
+        location = new Point(RIGHT_BOUND - 60, groundLevel);
+        centerOfTheHead = new Point(location.getX() + HEAD_OFFSET_X, location.getY() + HEAD_OFFSET_Y);
         upperRight = new Point(location.getX() + 35, location.getY() + 30);
-        lowerLeft = new Point(location.getX() + 65, location.getY() + 60);
+        lowerLeft  = new Point(location.getX() + 65, location.getY() + 60);
 
         setOpaque(false);
         setBounds(0, 0, 800, 381);
@@ -56,67 +63,60 @@ public class Player1 extends JComponent implements Runnable {
         playerThread = new Thread(this, "Player1-Thread");
     }
 
+    public void setRenderScale(double s, int ox, int oy) { renderScale = s; renderOffsetX = ox; renderOffsetY = oy; }
     public void start() { playerThread.start(); }
     public void stopLoop() { running = false; }
-
     public Point getUpperRight() { return upperRight; }
     public Point getLowerLeft() { return lowerLeft; }
     public Point getCenterOfTheHead() { return centerOfTheHead; }
+    public int getHeadRadius() { return HEAD_RADIUS; }
+
+    private void syncPoints() {
+        centerOfTheHead.setX(location.getX() + HEAD_OFFSET_X);
+        centerOfTheHead.setY(location.getY() + HEAD_OFFSET_Y);
+        upperRight.setX(location.getX() + 35);
+        upperRight.setY(location.getY() + 30);
+        lowerLeft.setX(location.getX() + 65);
+        lowerLeft.setY(location.getY() + 60);
+    }
 
     private void updatePosition() {
-        location.setX(location.getX() + dx);
-        centerOfTheHead.setX(centerOfTheHead.getX() + dx);
-        upperRight.setX(location.getX() + 35);
-        lowerLeft.setX(location.getX() + 65);
-
-        if (inAir) dy += 1;
-
+        double control = inAir ? AIR_CONTROL : 1.0;
+        location.setX(location.getX() + (int) Math.round(dx * control));
+        if (inAir) dy += GRAVITY_Y;
         location.setY(location.getY() + dy);
-        centerOfTheHead.setY(centerOfTheHead.getY() + dy);
-        upperRight.setY(location.getY() + 30);
-        lowerLeft.setY(location.getY() + 60);
 
-        if (location.getX() < leftBoundary) {
-            location.setX(leftBoundary);
-            centerOfTheHead.setX(location.getX() + 50);
-            upperRight.setX(location.getX() + 35);
-            lowerLeft.setX(location.getX() + 65);
+        if (location.getX() < LEFT_BOUND) {
+            location.setX(LEFT_BOUND);
             dx = 0;
-        } else if (location.getX() + image.getWidth() > rightBoundary) {
-            location.setX(rightBoundary - image.getWidth());
-            centerOfTheHead.setX(location.getX() + 50);
-            upperRight.setX(location.getX() + 35);
-            lowerLeft.setX(location.getX() + 65);
+        } else if (location.getX() + SPRITE_W > RIGHT_BOUND) {
+            location.setX(RIGHT_BOUND - SPRITE_W);
             dx = 0;
         }
 
         if (location.getY() > groundLevel) {
             location.setY(groundLevel);
-            centerOfTheHead.setY(groundLevel + 15);
-            upperRight.setY(location.getY() + 30);
-            lowerLeft.setY(location.getY() + 60);
             dy = 0;
             inAir = false;
         }
+        syncPoints();
     }
 
     public void setGoalLocation() {
-        location.setX(800 - 60);
+        location.setX(RIGHT_BOUND - 60);
         location.setY(groundLevel);
-        centerOfTheHead.setX(location.getX() + 50);
-        centerOfTheHead.setY(location.getY() + 15);
-        upperRight.setX(location.getX() + 35);
-        upperRight.setY(location.getY() + 30);
-        lowerLeft.setX(location.getX() + 65);
-        lowerLeft.setY(location.getY() + 60);
-        dx = dy = 0;
-        inAir = false;
+        dx = 0; dy = 0; inAir = false;
+        syncPoints();
     }
 
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        g.drawImage(image, location.getX(), location.getY(), this);
+        int drawX = renderOffsetX + (int) Math.round(location.getX() * renderScale);
+        int drawY = renderOffsetY + (int) Math.round(location.getY() * renderScale);
+        int w = (int) Math.round(SPRITE_W * renderScale);
+        int h = (int) Math.round(SPRITE_H * renderScale);
+        g.drawImage(image, drawX, drawY, w, h, this);
     }
 
     @Override
@@ -130,22 +130,17 @@ public class Player1 extends JComponent implements Runnable {
     }
 
     private class TAdapter extends KeyAdapter {
-        @Override
-        public void keyPressed(KeyEvent e) {
-            int key = e.getKeyCode();
-            if (key == KeyEvent.VK_LEFT)  dx = -2;
-            if (key == KeyEvent.VK_RIGHT) dx = 2;
-            if (key == KeyEvent.VK_UP && !inAir) {
-                dy = -13;
-                inAir = true;
-                jumpSound.play();
+        @Override public void keyPressed(KeyEvent e) {
+            switch (e.getKeyCode()) {
+                case KeyEvent.VK_LEFT -> dx = -RUN_SPEED;
+                case KeyEvent.VK_RIGHT -> dx = RUN_SPEED;
+                case KeyEvent.VK_UP -> {
+                    if (!inAir) { dy = JUMP_IMPULSE; inAir = true; jumpSound.play(); }
+                }
             }
         }
-
-        @Override
-        public void keyReleased(KeyEvent e) {
-            int key = e.getKeyCode();
-            if (key == KeyEvent.VK_LEFT || key == KeyEvent.VK_RIGHT) dx = 0;
+        @Override public void keyReleased(KeyEvent e) {
+            if (e.getKeyCode() == KeyEvent.VK_LEFT || e.getKeyCode() == KeyEvent.VK_RIGHT) dx = 0;
         }
     }
 }
